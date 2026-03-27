@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # 
-# Webcam Linux Validator
-# http://github.com/jjpaulo2/webcam-linux-validator
+# Webcam Linux Configurator
+# https://github.com/jjpaulo2/linux-webcam-configurator
+# 
+# This script is responsible for reading the webcam configuration from the JSON
+# file and applying it to the webcam using v4l2-ctl. It also checks if the webcam
+# is connected and if it supports the configured settings, and sends desktop notifications
+# in case of errors or when the webcam is ready to use.
 # 
 # MIT License
 # 
@@ -25,12 +30,24 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Lock file temporary path
+LOCK_FILE="/tmp/webcam-cfg.lock";
+
+# Handling the lock to prevent multiple instances of the script running at the same time
+if LOCK_PID=$(cat "$LOCK_FILE"); then
+    echo "[$(date)] [INFO] Script is already running with PID $LOCK_PID.";
+    exit 1;
+else
+    echo "$$" > "$LOCK_FILE";
+fi;
+
 # Path for the configuration JSON file
-CONFIG_FILE="/etc/webcam.json";
+CONFIG_FILE="/etc/webcam-cfg.json";
 
 # If configuration file does not exist, tell user
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "[$(date)] [ERROR] Couldn't read configurations from \"$CONFIG_FILE\"!";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -42,13 +59,17 @@ WEBCAM_CONFIG_FPS=$(jq -r '.config.fps' "$CONFIG_FILE");
 WEBCAM_CONFIG_FORMAT=$(jq -r '.config.format' "$CONFIG_FILE");
 WEBCAM_CONFIG_BANDWIDTH=$(jq -r '.config.bandwidth' "$CONFIG_FILE");
 
+# Reading active user to send desktop notifications
+ACTIVE_USER=$(who | grep -E '\(:[0-9]+\)' | awk '{print $1}' | head -1);
+
 # Function to send desktop notifications
 webcam_notify() {
     if [ -z "$1" ] || [ -z "$2" ]; then
         echo "[$(date)] [ERROR] Usage: webcam_notify <title> <message>";
         exit 1;
     else
-        notify-send --app-name="$WEBCAM_NAME" --icon="cheese" "$1" "$2";
+        systemd-run --user --machine="${ACTIVE_USER}@.host" \
+            notify-send --app-name="$WEBCAM_NAME" --icon="cheese" "$1" "$2";
     fi;
 }
 
@@ -59,6 +80,7 @@ DEVICE_ID=$(lsusb | grep -i "$WEBCAM_NAME" | grep -oP "\w{4}:\w{4}");
 if [ -z "$DEVICE_ID" ]; then
     echo "[$(date)] [ERROR] Webcam \"$WEBCAM_NAME\" not found!";
     webcam_notify "Webcam not found" "Please try to re-connect the webcam";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -69,7 +91,7 @@ HAS_BANDWIDTH=$(lsusb -v -t | grep -B 1 "$DEVICE_ID" | grep -i "Class=Video.*$WE
 if [ -z "$HAS_BANDWIDTH" ]; then
     echo "[$(date)] [ERROR] Webcam \"$WEBCAM_NAME\" can't operate at \"$WEBCAM_CONFIG_BANDWIDTH\"!";
     webcam_notify "Webcam can't operate at $WEBCAM_CONFIG_BANDWIDTH" "Please try to re-connect the webcam in a USB 3.0 port";
-    exit 1;
+    rm -f "$LOCK_FILE";    exit 1;
 fi;
 
 # Read all video devices associated with the webcam
@@ -92,6 +114,7 @@ done;
 if [ -z "$VIDEO_DEVICE" ]; then
     echo "[$(date)] [ERROR] Webcam \"$WEBCAM_NAME\" does not have video capture capability!";
     webcam_notify "Webcam does not have video capture capability" "Please try to re-connect the webcam";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -109,6 +132,7 @@ configure_webcam() {
 if ! configure_webcam; then
     echo "[$(date)] [ERROR] Failed to configure \"$WEBCAM_NAME\"!";
     webcam_notify "Failed to configure webcam" "Please try to re-connect the webcam or check the configuration file";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -119,6 +143,7 @@ HAS_CONFIGURED_FORMAT=$(v4l2-ctl --device="$VIDEO_DEVICE" --get-fmt-video | grep
 if [ -z "$HAS_CONFIGURED_FORMAT" ]; then
     echo "[$(date)] [ERROR] Failed to set pixel format \"$WEBCAM_CONFIG_FORMAT\" for \"$WEBCAM_NAME\"!";
     webcam_notify "Failed to configure webcam" "Please try to re-connect the webcam or check the configuration file";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -129,6 +154,7 @@ HAS_CONFIGURED_RESOLUTION=$(v4l2-ctl --device="$VIDEO_DEVICE" --get-fmt-video | 
 if [ -z "$HAS_CONFIGURED_RESOLUTION" ]; then
     echo "[$(date)] [ERROR] Failed to set resolution \"$WEBCAM_CONFIG_WIDTH x $WEBCAM_CONFIG_HEIGHT\" for \"$WEBCAM_NAME\"!";
     webcam_notify "Failed to configure webcam" "Please try to re-connect the webcam or check the configuration file";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -139,6 +165,7 @@ HAS_CONFIGURED_FPS=$(v4l2-ctl --device="$VIDEO_DEVICE" --get-parm | grep -i "Fra
 if [ -z "$HAS_CONFIGURED_FPS" ]; then
     echo "[$(date)] [ERROR] Failed to set FPS \"$WEBCAM_CONFIG_FPS\" for \"$WEBCAM_NAME\"!";
     webcam_notify "Failed to configure webcam" "Please try to re-connect the webcam or check the configuration file";
+    rm -f "$LOCK_FILE";
     exit 1;
 fi;
 
@@ -149,6 +176,6 @@ fi;
     echo "[$(date)] [INFO] \"$WEBCAM_NAME\" has been configured!";
 };
 
-# Notify user that webcam is ready to use
+# Final success message and lock cleanup
 webcam_notify "Webcam ready to use" "The webcam has been successfully configured";
-exit 0;
+rm -f "$LOCK_FILE";
