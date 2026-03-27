@@ -1,4 +1,4 @@
-# 📷 Webcam Linux Configurator
+# 📷 Webcam Configurator for Linux
 
 Configure your USB webcam automatically on Linux when it is connected.
 
