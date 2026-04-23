@@ -62,6 +62,19 @@ WEBCAM_CONFIG_BANDWIDTH=$(jq -r '.config.bandwidth' "$CONFIG_FILE");
 # Reading active user to send desktop notifications
 ACTIVE_USER=$(who | grep -E '\(:[0-9]+\)' | awk '{print $1}' | head -1);
 
+# Setting webcam icon based on the desktop environment
+case "$XDG_CURRENT_DESKTOP" in
+  GNOME)
+    WEBCAM_ICON="cheese";
+    ;;
+  KDE)
+    WEBCAM_ICON="kamoso";
+    ;;
+  *)
+    WEBCAM_ICON="webcam";
+    ;;
+esac;
+
 # Function to send desktop notifications
 webcam_notify() {
     if [ -z "$1" ] || [ -z "$2" ]; then
@@ -69,7 +82,7 @@ webcam_notify() {
         exit 1;
     else
         systemd-run --user --machine="${ACTIVE_USER}@.host" \
-            notify-send --app-name="$WEBCAM_NAME" --icon="cheese" "$1" "$2";
+            notify-send --app-name="$WEBCAM_NAME" --icon="$WEBCAM_ICON" "$1" "$2";
     fi;
 }
 
