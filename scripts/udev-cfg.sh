@@ -25,6 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Enable strict mode
+set -euo pipefail;
+
 # Path for the udev rules file
 RULES_FILE="/etc/udev/rules.d/99-webcam.rules";
 
@@ -59,6 +62,13 @@ fi;
 ID_VENDOR=${DEVICE_ID%:*}
 ID_PRODUCT=${DEVICE_ID#*:}
 
+# If udev rules file already exists, tell user
+if [ -f "$RULES_FILE" ]; then
+    echo "[$(date)] [ERROR] Udev rules file \"$RULES_FILE\" already exists!";
+    exit 1;
+fi;
+
+# Creating udev rule for the webcam
 echo "\
 SUBSYSTEM==\"video4linux\", \
 KERNEL==\"video[0-9]*\", \
@@ -66,4 +76,5 @@ ATTRS{idVendor}==\"$ID_VENDOR\", \
 ATTRS{idProduct}==\"$ID_PRODUCT\", \
 RUN+=\"/bin/bash -c '$CONFIG_SCRIPT >> $LOGS_FILE 2>&1'\"" > "$RULES_FILE";
 
+# Final success message
 echo "[$(date)] [INFO] Udev rule for webcam \"$WEBCAM_NAME\" has been created at \"$RULES_FILE\".";
